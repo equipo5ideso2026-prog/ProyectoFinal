@@ -10,7 +10,7 @@ from pymongo.server_api import ServerApi
 
 @st.cache_resource(show_spinner="Conectando a MongoDB Atlas…")
 def get_mongo_client() -> MongoClient:
-    uri = st.secrets.get("MONGO_URI")
+    uri = "mongodb+srv://marianocruzchavez738_db_user:XsH1VpctVz94qEoj@cluster0.drbo2p4.mongodb.net/?appName=Cluster0"
     if not uri:
         raise RuntimeError(
             "Falta MONGO_URI en .streamlit/secrets.toml. "
