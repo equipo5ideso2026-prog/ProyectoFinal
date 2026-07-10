@@ -1,85 +1,96 @@
-# Ernesto Investing AI — iDeSo · UNMSM · FISI
+# Ernesto Investing AI — versión unificada en Streamlit
 
-Sistema web de apoyo a decisiones de inversión bursátil con IA, para 5 tickers mineros
-(`FSM`, `VOLCABC1.LM`, `ABX.TO`, `BVN`, `BHP`). El frontend (`frontend/`, 11 módulos,
-GitHub Pages) es el mismo sin importar qué backend uses — ambos exponen exactamente
-el mismo contrato de 8 endpoints, así que solo cambia qué URL de ngrok pegas en el
-portal (`index.html`).
-
-Este repo documenta **2 formas distintas de implementar el mismo backend**. Ninguna es
-"la incorrecta" — son dos arquitecturas válidas con trade-offs distintos.
-
-## Opción A — Notebooks modulares (`notebooks/`)
-
-5 notebooks separados, cada uno con una responsabilidad: ingesta, SVC, RNN, LSTM y
-API. Los modelos se **entrenan una sola vez de antemano** (offline) y quedan guardados
-en MongoDB; la API solo lee, nunca reentrenar. Es la arquitectura "clásica" que pide el
-Cap. III del documento de especificaciones del curso (Alternativa A).
-
-- ✅ Respuestas siempre instantáneas (no hay que esperar a que entrene nada).
-- ✅ Más fácil de explicar/documentar capítulo por capítulo en el informe (cada
-  notebook = un capítulo).
-- ⚠️ Si el mercado cambia, hay que volver a correr los notebooks 1, 2, 4 y 5 a mano
-  para refrescar las predicciones.
-
-Ver [`README_opcionA_notebooks_modulares.md`](./README_opcionA_notebooks_modulares.md).
-
-## Opción B — Backend consolidado (`backend/Ernesto_Investing_AI_iDeSo_Mongo.ipynb`)
-
-Un solo notebook con los 8 endpoints. Entrena/calcula **al vuelo** la primera vez que
-se pide un ticker, y cachea el resultado en MongoDB por unas horas.
-
-- ✅ Siempre usa datos frescos de mercado sin que nadie tenga que re-correr nada a mano.
-- ✅ Un solo archivo, más simple de desplegar.
-- ⚠️ La primera petición de RNN/LSTM para cada ticker puede tardar (está entrenando
-  20 modelos en vivo) — hay que "calentar" la caché antes de grabar el video de
-  exposición (ver el README de esa opción).
-
-Ver [`README_opcionB_backend_consolidado.md`](./README_opcionB_backend_consolidado.md).
-
-## Estructura del repo
+Esta es la versión "todo en uno" del proyecto iDeSo (eq5). Reemplaza el
+esquema anterior:
 
 ```
-ernesto-investing-ai/
-├── README.md                                  (este archivo)
-├── README_opcionA_notebooks_modulares.md
-├── README_opcionB_backend_consolidado.md
-├── frontend/
-│   ├── index.html                (portal: conecta con cualquiera de las 2 opciones)
-│   ├── modulo_mercado.html       (dashboard con Plotly.js)
-│   ├── modulo_svc.html           (clasificador SVC con Plotly.js)
-│   └── ... (otros 9 módulos)
-├── notebooks/                    ← Opción A
-│   ├── Notebook1_Ingesta_Datos.ipynb
-│   ├── Notebook2_SVC_Clasificacion.ipynb
-│   ├── Notebook3_API_FastAPI.ipynb
-│   ├── Notebook4_RNN_Clasificadores.ipynb
-│   └── Notebook5_LSTM_Regresor.ipynb
-├── backend/                      ← Opción B
-│   ├── Ernesto_Investing_AI_iDeSo_Mongo.ipynb
-│   └── requirements.txt
-└── data/                         (respaldos JSON generados por los Notebooks 4 y 5)
+Antes:  Notebook (Colab) → FastAPI → ngrok → GitHub Pages (11 HTMLs sueltos)
+Ahora:  Streamlit (app.py + pages/) → MongoDB Atlas directo
 ```
 
-## Integrantes
+Ya **no hace falta ngrok ni el notebook de Colab corriendo**: toda la
+lógica que antes vivía en las celdas del notebook (`descargar_ohlcv`,
+`entrenar_svc`, `entrenar_rnns`, `entrenar_lstm_regresor`, Markowitz,
+auth con PBKDF2) ahora vive en `core/` como funciones Python normales que
+Streamlit llama directamente, en el mismo proceso.
 
-- Porras Cahuana Daniela Alekzya
-- Huallpacuna Gutierrez Jean Piero
-- Machaca Ponce Sebastian Emanuel
-- Cruz Reyes Martín Alejandro
-- Cruz Chavez Mariano Abel
-- Agurto Chuye María Fernanda
+## Estructura
 
-## Qué usar en el informe
+```
+app.py                              → Portal (equivalente a index.html)
+core/
+  db.py                             → Conexión a MongoDB Atlas (st.cache_resource)
+  cache_utils.py                    → Caché persistente en Mongo + logging (igual que el notebook)
+  mercado.py                        → OHLCV + indicadores técnicos (yfinance)
+  svc_model.py                      → Clasificador SVC (GridSearchCV + TimeSeriesSplit)
+  rnn_model.py                      → Ensamble LSTM/BiLSTM/GRU/SimpleRNN (clasificación)
+  lstm_model.py                     → Regresor LSTM de precio (con banda de confianza)
+  portafolio.py                     → Optimización de Markowitz (scipy.optimize)
+  auth.py                           → Registro/login (PBKDF2-SHA256 + salt, en MongoDB)
+  session_guard.py                  → Guard de sesión (reemplaza verificarSesion() de los HTML)
+pages/
+  1_🔑_Autenticacion.py              → modulo6.1-autenticacion.html
+  2_📊_Dashboard_Mercado.py          → modulo_mercado.html
+  3_🤖_Clasificador_SVC.py           → modulo_svc.html
+  4_🔮_Pronosticos_LSTM.py           → modulo6.4-lstm.html
+  5_🧠_Core_Predictivo_RNNs.py       → modulo6.6-core-predictivo-central.html
+  6_📰_Sentimiento_NLP.py            → modulo6.5-nlp-operaciones.html (datos de ejemplo, igual que el original)
+  7_🎯_Estrategias_Opciones.py       → modulo6.7-estrategias.html
+  8_🧾_Ordenes_Paper_Trading.py      → modulo6.8-ordenes.html
+  9_📐_Portafolios_Markowitz.py      → modulo6.9-portafolio.html (ahora con Markowitz REAL, no simulado)
+  10_🛠️_Consola_Admin.py            → modulo6.10-consola.html (con stats reales de Mongo)
+  11_📈_Backtesting.py               → modulo6.11-backtesting.html (sigue simulado, como en el original)
+```
 
-Si el equipo decide quedarse con **ambas** opciones (como en este repo), el Cap. V del
-informe Word debe documentar las dos arquitecturas y sus colecciones de MongoDB por
-separado — no mezclarlas, porque cada una escribe en colecciones distintas:
+## Cómo correrlo
 
-| | Opción A | Opción B |
-|---|---|---|
-| Mercado/SVC | `precios_ohlcv`, `predicciones`, `metricas_modelos` | `cache_modelos` (resultado cacheado) |
-| RNN | `clasificaciones_rnn` | `cache_modelos` |
-| LSTM | `predicciones_lstm` | `cache_modelos` |
-| Usuarios | `usuarios` | `usuarios` (misma colección, mismo esquema) |
-| Extra | — | `logs_resultados` (historial de cada respuesta servida) |
+1. Instala dependencias:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   Si no quieres usar TensorFlow (páginas 4 y 5), puedes borrar la línea
+   `tensorflow` del `requirements.txt` — el resto de la app sigue
+   funcionando igual, esas dos páginas solo muestran un aviso.
+
+2. Configura tu conexión a MongoDB Atlas:
+   ```bash
+   cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+   ```
+   Y pega tu connection string real (`mongodb+srv://usuario:pass@cluster...`)
+   en `MONGO_URI`. En Atlas → Network Access agrega `0.0.0.0/0` si vas a
+   desplegar en Streamlit Community Cloud.
+
+3. Corre la app:
+   ```bash
+   streamlit run app.py
+   ```
+
+## Diferencias clave respecto a la versión HTML + ngrok
+
+- **Sesión**: antes `localStorage.getItem('investai_user')` en cada HTML;
+  ahora `st.session_state["investai_user"]`, controlado por
+  `core/session_guard.requiere_sesion()` en cada página.
+- **API URL**: antes se pegaba manualmente la URL de ngrok en el portal
+  (`sessionStorage.setItem('apiUrl', ...)`); ahora no existe ese paso —
+  Streamlit llama las funciones de `core/` directo.
+- **Caché de modelos caros** (SVC/RNNs/LSTM): sigue en la colección
+  `cache_modelos` de MongoDB con el mismo esquema y TTL que el notebook
+  (1h para SVC, 6h para RNNs/LSTM), vía
+  `core/cache_utils.cache_get_or_compute_mongo`.
+- **Log histórico**: cada resultado se sigue insertando en
+  `logs_resultados`, igual que `log_resultado()` en el notebook.
+- **Portafolio**: el HTML original (`modulo6.9-portafolio.html`) mostraba
+  una nube Monte Carlo **simulada** con pesos fijos hardcodeados. En esta
+  versión, `core/portafolio.py` reproduce el cálculo real del notebook
+  (retornos/covarianzas de Yahoo Finance + `scipy.optimize.minimize` para
+  Sharpe máximo).
+- **NLP y Backtesting** siguen con datos de ejemplo/simulados, tal como
+  estaban en los HTML originales — el notebook no tiene celdas para esos
+  dos módulos todavía.
+
+## Nota sobre el repo de GitHub (Ideso-final)
+
+Este `app.py` reemplaza al `app.py` que hay en el repo (el que ignoraste).
+Si me pasas el contenido de las carpetas `frontend/` y `backend/` de ese
+repo, puedo ajustar cualquier detalle de contrato de datos que difiera de
+lo que asumí acá (nombres de campos, tickers adicionales, etc.).
